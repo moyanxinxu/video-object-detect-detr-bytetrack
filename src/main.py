@@ -82,10 +82,6 @@ class VideoTracker(object):
                 (self.im_width, self.im_height),
             )
 
-        # Initialize directory for saving text output
-        if self.args.save_txt:
-            os.makedirs(self.args.save_txt, exist_ok=True)
-
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -124,15 +120,6 @@ class VideoTracker(object):
             if self.args.save_path:
                 self.writer.write(image)
 
-            # Save bounding box coordinates to text file
-            if self.args.save_txt:
-                with open(
-                    self.args.save_txt + str(idx_frame).zfill(4) + ".txt", "a"
-                ) as f:
-                    for i in range(len(outputs)):
-                        x1, y1, x2, y2, idx = outputs[i]
-                        f.write("{}\t{}\t{}\t{}\t{}\n".format(x1, y1, x2, y2, idx))
-
             idx_frame += 1
 
     def image_track(self, image):
@@ -167,11 +154,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--device", default="cpu", help="cuda device, i.e. 0 or 0,1,2,3 or cpu"
-    )
-    parser.add_argument(
-        "--save_txt",
-        default="output/",
-        help="path to save text results",
     )
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--display_width", type=int, default=800)
