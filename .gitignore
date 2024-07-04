@@ -1,1 +1,3 @@
 *.pyc
+src/preprocess_dataset/SODA10M/*
+.obsidian

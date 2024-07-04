@@ -8,7 +8,7 @@ import torch.backends.cudnn as cudnn
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
 from deep_sort import build_tracker
-from toolkits.func import detect_objects, get_config, plot_bboxes, xyxy2xywh
+from toolkits.func import detect_objects, get_config, mp4v2h264, plot_bboxes, xyxy2xywh
 
 # Set up environment variables for proxies
 os.environ["HF_ENDPOINT"] = "http://hf-mirror.com"
@@ -18,6 +18,8 @@ os.environ["HTTPS_PROXY"] = "http://127.0.0.1:7890"
 # Enable CUDA benchmarking for improved performance
 cudnn.benchmark = True
 
+detector = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
+preprocessor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
 
 class VideoTracker(object):
     def __init__(self, args):
@@ -45,13 +47,8 @@ class VideoTracker(object):
         self.deepsort = build_tracker(cfg, use_cuda=use_cuda)
 
         # Load DETR model and processor
-        self.detector = DetrForObjectDetection.from_pretrained(
-            "facebook/detr-resnet-50"
-        )
-        self.preprocessor = DetrImageProcessor.from_pretrained(
-            "facebook/detr-resnet-50"
-        )
-        self.detector.to(self.device).eval()
+
+        detector.to(self.device).eval()
 
         self.names = "facebook/detr-resnet-50"
 
@@ -88,6 +85,7 @@ class VideoTracker(object):
         # Release video capture and writer resources
         self.vdo.release()
         self.writer.release()
+        mp4v2h264(self.save_video_path, self.save_video_path)
 
     def run(self):
         idx_frame = 0
@@ -116,7 +114,6 @@ class VideoTracker(object):
                     cv.destroyAllWindows()
                     break
 
-            # Save video output
             if self.args.save_path:
                 self.writer.write(image)
 
@@ -124,7 +121,7 @@ class VideoTracker(object):
 
     def image_track(self, image):
         # Perform object detection
-        outputs = detect_objects(image, self.preprocessor, self.detector)
+        outputs = detect_objects(image, preprocessor, detector)
         if outputs is not None and len(outputs):
             bboxes_xywh = xyxy2xywh(outputs)
             scores = outputs[:, 4]
@@ -138,34 +135,22 @@ class VideoTracker(object):
         return outputs, scores, labels
 
 
-if __name__ == "__main__":
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input_path", type=str, default="demo.mp4", help="source")
-    parser.add_argument(
-        "--save_path", type=str, default="output/", help="output folder"
+def detect(in_video_path):
+    args = argparse.Namespace(
+        input_path=in_video_path,
+        save_path="output/",
+        frame_interval=2,
+        fourcc="mp4v",
+        device="cpu",
+        display=False,
+        display_width=800,
+        display_height=600,
+        cam=-1,
+        config_deepsort="./configs/deep_sort.yaml",
     )
-    parser.add_argument("--frame_interval", type=int, default=2)
-    parser.add_argument(
-        "--fourcc",
-        type=str,
-        default="mp4v",
-        help="output video codec (verify ffmpeg support)",
-    )
-    parser.add_argument(
-        "--device", default="cpu", help="cuda device, i.e. 0 or 0,1,2,3 or cpu"
-    )
-    parser.add_argument("--display", action="store_true")
-    parser.add_argument("--display_width", type=int, default=800)
-    parser.add_argument("--display_height", type=int, default=600)
-    parser.add_argument("--camera", action="store", dest="cam", type=int, default="-1")
-    parser.add_argument(
-        "--config_deepsort", type=str, default="./configs/deep_sort.yaml"
-    )
-
-    args = parser.parse_args()
-    print(args)
 
     # Run the video tracker
     with VideoTracker(args) as vdo_trk:
         vdo_trk.run()
+
+    return "output/output.mp4"

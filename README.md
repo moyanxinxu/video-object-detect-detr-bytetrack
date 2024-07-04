@@ -9,7 +9,9 @@
 ```bash
 cv2
 gradio
+moviepy
 numpy
+timm
 torch
 transformers
 ```
@@ -55,6 +57,10 @@ transformers
 | 张栋梁 | 视频 demo 演示制作与网络可解释性可视化 |
 | 王欣雨 |     gradio 前端界面搭建      |
 | 尹潇逸 |   数据集格式转化与网络可解释性可视化    |
+
+### demo
+
+![demo.png](assess/demo.png)
 
 ## 参考资料
 
