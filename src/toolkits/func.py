@@ -1,322 +1,215 @@
 import os
-import random
 
 import cv2 as cv
+import moviepy.editor as mpe
 import numpy as np
+import supervision as sv
 import torch
-import yaml
-from easydict import EasyDict as edict
-from moviepy.editor import ImageSequenceClip, VideoFileClip, clips_array
-
-id2label = {
-    0: "N/A",
-    1: "person",
-    10: "traffic light",
-    11: "fire hydrant",
-    12: "street sign",
-    13: "stop sign",
-    14: "parking meter",
-    15: "bench",
-    16: "bird",
-    17: "cat",
-    18: "dog",
-    19: "horse",
-    2: "bicycle",
-    20: "sheep",
-    21: "cow",
-    22: "elephant",
-    23: "bear",
-    24: "zebra",
-    25: "giraffe",
-    26: "hat",
-    27: "backpack",
-    28: "umbrella",
-    29: "shoe",
-    3: "car",
-    30: "eye glasses",
-    31: "handbag",
-    32: "tie",
-    33: "suitcase",
-    34: "frisbee",
-    35: "skis",
-    36: "snowboard",
-    37: "sports ball",
-    38: "kite",
-    39: "baseball bat",
-    4: "motorcycle",
-    40: "baseball glove",
-    41: "skateboard",
-    42: "surfboard",
-    43: "tennis racket",
-    44: "bottle",
-    45: "plate",
-    46: "wine glass",
-    47: "cup",
-    48: "fork",
-    49: "knife",
-    5: "airplane",
-    50: "spoon",
-    51: "bowl",
-    52: "banana",
-    53: "apple",
-    54: "sandwich",
-    55: "orange",
-    56: "broccoli",
-    57: "carrot",
-    58: "hot dog",
-    59: "pizza",
-    6: "bus",
-    60: "donut",
-    61: "cake",
-    62: "chair",
-    63: "couch",
-    64: "potted plant",
-    65: "bed",
-    66: "mirror",
-    67: "dining table",
-    68: "window",
-    69: "desk",
-    7: "train",
-    70: "toilet",
-    71: "door",
-    72: "tv",
-    73: "laptop",
-    74: "mouse",
-    75: "remote",
-    76: "keyboard",
-    77: "cell phone",
-    78: "microwave",
-    79: "oven",
-    8: "truck",
-    80: "toaster",
-    81: "sink",
-    82: "refrigerator",
-    83: "blender",
-    84: "book",
-    85: "clock",
-    86: "vase",
-    87: "scissors",
-    88: "teddy bear",
-    89: "hair drier",
-    9: "boat",
-    90: "toothbrush",
-}
+from hyper import hp
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+from PIL import Image
+from tqdm import tqdm
 
 
-def video2frames(video):
+def detect(frame, model, processor, confidence_threshold):
     """
     args:
-        video: str  # video path
+        image: PIL image
+        model: PreTrainedModel
+        processor: PreTrainedProcessor
+        confidence_threshold: float
     returns:
-        frames: list  # list of frames with cv.Matrix format
+        results: dict with keys "boxes", "labels", "scores"
 
-    example:
-        video_path = "./demo.mp4"
-        video2frames(video_path)
+
+    examples:
+    [
+        {
+            "scores": tensor([0.9980, 0.9039, 0.7575, 0.9033]),
+            "labels": tensor([86, 64, 67, 67]),
+            "boxes": tensor(
+                [
+                    [1.1582e03, 1.1893e03, 1.9373e03, 1.9681e03],
+                    [2.4274e02, 1.3234e02, 2.5919e03, 1.9628e03],
+                    [1.1107e-01, 1.5105e03, 3.1980e03, 2.1076e03],
+                    [7.1036e-01, 1.7360e03, 3.1970e03, 2.1100e03],
+                ]
+            ),
+        }
+    ]
     """
-    videoCapture = cv.VideoCapture()
-    videoCapture.open(video)
-    frames = []
-
-    while True:
-        ret, frame = videoCapture.read()
-        if ret:
-            frames.append(cv.cvtColor(frame, cv.COLOR_BGR2RGB))
-        else:
-            break
-
-    return frames
-
-
-class YamlParser(edict):
-    """
-    This is yaml parser based on EasyDict.
-    args:
-        edict: dict  # config dict
-    returns:
-        YamlParser  # YamlParser object
-    """
-
-    def __init__(self, cfg_dict=None, config_file=None):
-        if cfg_dict is None:
-            cfg_dict = {}
-
-        if config_file is not None:
-            assert os.path.isfile(config_file)
-            with open(config_file, "r") as fo:
-                cfg_dict.update(yaml.load(fo.read()))
-
-        super(YamlParser, self).__init__(cfg_dict)
-
-    def merge_from_file(self, config_file):
-        with open(config_file, "r") as fo:
-            self.update(yaml.safe_load(fo.read()))
-
-    def merge_from_dict(self, config_dict):
-        self.update(config_dict)
-
-
-def get_config(config_file=None):
-    """
-    args:
-        config_file: str  # config file path
-    returns:
-        YamlParser  # YamlParser object
-    """
-    return YamlParser(config_file=config_file)
-
-
-def xyxy2xywh(bbox):
-    """
-    Converts bounding boxes from (xmin, ymin, xmax, ymax) format to (xmin, ymin, width, height) format.
-
-    args:
-        bbox (torch.Tensor): A tensor of shape (N, 4) representing bounding boxes,
-            where N is the number of bounding boxes.
-
-    returns:
-        numpy.ndarray: A numpy array of shape (N, 4) representing the converted bounding boxes.
-    """
-
-    xmin, ymin, xmax, ymax = bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3]
-    width = xmax - xmin
-    height = ymax - ymin
-
-    bbox = torch.stack((xmin, ymin, width, height), dim=1)
-    return bbox.numpy()
-
-
-def plot_bboxes(frame, bboxes, scores, labels, color=(255, 0, 0)):
-    """
-    Plots bounding boxes on the given frame with their corresponding labels and scores.
-
-    args:
-        frame (numpy.ndarray): The image frame on which to plot the bounding boxes.
-        bboxes (numpy.ndarray): An array of shape (N, 4) representing bounding boxes.
-        scores (numpy.ndarray): An array of shape (N,) representing the confidence scores.
-        labels (numpy.ndarray): An array of shape (N,) representing the labels.
-        color (tuple): The color for the bounding boxes and text in BGR format.
-
-    returns:
-        frame: (numpy.ndarray): The frame with plotted bounding boxes, labels, and scores.
-    """
-    bboxes = bboxes.astype("int")
-    for bbox, score, label in zip(bboxes, scores, labels):
-        xmin, ymin, centerx, centery = bbox[0], bbox[1], bbox[2], bbox[3]
-        width = centerx - xmin
-        height = centery - ymin
-
-        # centerxy转化xyxy
-        x1 = int(centerx - width // 2)
-        y1 = int(centery - height // 2)
-        x2 = int(centerx + width // 2)
-        y2 = int(centery + height // 2)
-
-        fill_color = label2color(label.item())
-        points = np.array([(x1, y1), (x2, y1), (x2, y2), (x1, y2)], np.int32)
-        frame_copy = cv.fillConvexPoly(frame.copy(), points, fill_color)
-        frame = cv.rectangle(frame, (x1, y1), (x2, y2), fill_color, 2)
-        frame = cv.addWeighted(frame, 0.8, frame_copy, 0.2, 0)
-        # 绘制标签和置信度
-
-        text = f"{id2label[label.item()]}:{score.item():.2f}"
-        (text_width, text_height), _ = cv.getTextSize(
-            text, cv.FONT_HERSHEY_SIMPLEX, 0.5, 1
-        )
-        cv.rectangle(
-            frame, (x1, y1 - text_height), (x1 + text_width, y1), fill_color, -1
-        )
-        frame = cv.putText(
-            frame,
-            text,
-            (x1, y1),
-            cv.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 0, 0),
-            2,
-        )
-
-    return frame
-
-
-def detect_objects(frame, preprocessor, model):
-    """
-    Detects objects in the given frame using the specified preprocessor and model.
-
-    args:
-        frame (numpy.ndarray): The image frame in which to detect objects.
-        preprocessor: The preprocessor object to preprocess the image and post-process the model outputs.
-        model: The object detection model.
-
-    returns:
-        torch.Tensor: A tensor of shape (N, 6) where N is the number of detected objects.  Each row contains [xmin, ymin, xmax, ymax, score, label].
-    """
-    h, w, _ = frame.shape
-    frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-    inputs = preprocessor(images=frame, return_tensors="pt")
-
+    inputs = processor(images=frame, return_tensors="pt").to(hp.device)
     with torch.no_grad():
-        ret = model(**inputs)
+        outputs = model(**inputs)
+    target_sizes = torch.tensor([frame.size[::-1]])
 
-    processed_output = preprocessor.post_process_object_detection(
-        ret, target_sizes=[(h, w)], threshold=0.9
-    )[0]
-    scores, labels, boxes = (
-        processed_output["scores"],
-        processed_output["labels"],
-        processed_output["boxes"],
+    results = processor.post_process_object_detection(
+        outputs=outputs, threshold=confidence_threshold, target_sizes=target_sizes
     )
-    return torch.cat((boxes, scores.unsqueeze(1), labels.unsqueeze(1)), dim=1)
+    return results
 
 
-def mp4v2h264(in_video_path, out_video_path):
+def get_len_frames(viedo_path):
     """
     args:
-        in_video_path: str  # input video path
-        out_video_path: str  # output video path
+        viedo_path: str
     returns:
-        None
+        int: the number of frames in the video
+    examples:
+        get_len_frames("../demo_video/aerial.mp4") # 1478
     """
-    frames = video2frames(in_video_path)
-    cap = cv.VideoCapture(in_video_path)
-    fps = cap.get(cv.CAP_PROP_FPS)
-    clip = ImageSequenceClip(frames, fps=fps)
-    clip.write_videofile(out_video_path, codec="libx264")
-    cap.release()
+    video_info = sv.VideoInfo.from_video_path(viedo_path)
+    return video_info.total_frames
 
 
-def concateVideo(video1, video2, out_path="./output/concated_output.mp4"):
+def track(detected_result, tracker: sv.ByteTrack):
     """
     args:
-        video1: str  # video path 1
-        video2: str  # video path 2
+        detected_result: dict with keys "boxes", "labels", "scores"
+        tracker: sv.ByteTrack
     returns:
-        None
+        tracked_result: dict with keys "boxes", "labels", "scores"
+    examples:
+        from transformers import DetrImageProcessor, DetrForObjectDetection
+
+        processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
+        model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
+
+        tracker = sv.ByteTrack()
+
+        image = Image.open("ZJF990.jpg")
+
+        detected_result = detect(image, model, processor, hp.confidence_threshold)
+        tracked_result = track(detected_result, tracker)
+
+        print(detected_result)
+        print(tracked_result)
+
+
+        [
+            {
+                "scores": tensor([0.9980, 0.9039, 0.7575, 0.9033]),
+                "labels": tensor([86, 64, 67, 67]),
+                "boxes": tensor(
+                    [
+                        [1.1582e03, 1.1893e03, 1.9373e03, 1.9681e03],
+                        [2.4274e02, 1.3234e02, 2.5919e03, 1.9628e03],
+                        [1.1107e-01, 1.5105e03, 3.1980e03, 2.1076e03],
+                        [7.1036e-01, 1.7360e03, 3.1970e03, 2.1100e03],
+                    ]
+                ),
+            }
+        ]
+
+
+
+        Detections(
+            xyxy=array(
+                [
+                    [1.1581914e03, 1.1892766e03, 1.9372931e03, 1.9680990e03],
+                    [2.4273552e02, 1.3233553e02, 2.5918860e03, 1.9628494e03],
+                    [1.1106834e-01, 1.5105106e03, 3.1980032e03, 2.1075664e03],
+                    [7.1036065e-01, 1.7359819e03, 3.1970449e03, 2.1100107e03],
+                ],
+                dtype=float32,
+            ),
+            mask=None,
+            confidence=array([0.9980374, 0.9038882, 0.7575455, 0.9032779], dtype=float32),
+            class_id=array([86, 64, 67, 67]),
+            tracker_id=array([1, 2, 3, 4]),
+            data={},
+        )
+
+
     """
-    video_1 = VideoFileClip(video1)
-    video_2 = VideoFileClip(video2)
 
-    final_clip = clips_array([[video_1, video_2]])
-    final_clip.write_videofile(out_path)
-
-    return out_path
+    detections = sv.Detections.from_transformers(detected_result[0])
+    detections = tracker.update_with_detections(detections)
+    return detections
 
 
-def label2color(label, seed=42):
+def annotate_image(
+    frame,
+    detections,
+    labels,
+    scores,
+    mask_annotator: sv.MaskAnnotator,
+    bbox_annotator: sv.BoxAnnotator,
+    label_annotator: sv.LabelAnnotator,
+) -> np.ndarray:
+    out_frame = mask_annotator.annotate(frame, detections)
+    out_frame = bbox_annotator.annotate(out_frame, detections)
+    out_frame = label_annotator.annotate(out_frame, detections, labels=labels)
+    return out_frame
+
+
+def detect_and_track(
+    video_path,
+    model,
+    processor,
+    tracker,
+    confidence_threshold,
+    mask_annotator: sv.MaskAnnotator,
+    bbox_annotator: sv.BoxAnnotator,
+    label_annotator: sv.LabelAnnotator,
+):
+    video_info = sv.VideoInfo.from_video_path(video_path)
+    fps = video_info.fps
+    len_frames = video_info.total_frames
+
+    frames_loader = sv.get_video_frames_generator(video_path, end=len_frames)
+
+    result_file_name = "output.mp4"
+    original_file_name = "original.mp4"
+    combined_file_name = "combined.mp4"
+    result_file_path = os.path.join("../output/", result_file_name)
+    original_file_path = os.path.join("../output/", original_file_name)
+    combined_file_name = os.path.join("../output/", combined_file_name)
+
+    concated_frames = []
+    original_frames = []
+    for frame in tqdm(frames_loader, total=len_frames):
+        results = detect(Image.fromarray(frame), model, processor, confidence_threshold)
+        tracked_results = track(results, tracker)
+        frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
+
+        original_frames.append(frame)
+        frame = annotate_image(
+            frame,
+            tracked_results,
+            labels=[
+                model.config.id2label[label]
+                for label in tracked_results.class_id.tolist()
+            ],
+            scores=tracked_results.confidence.tolist(),
+            mask_annotator=mask_annotator,
+            bbox_annotator=bbox_annotator,
+            label_annotator=label_annotator,
+        )
+        concated_frames.append(frame)  # Add the processed frame to the list
+
+    # Create a MoviePy video clip from the list of frames
+    original_video = mpe.ImageSequenceClip(original_frames, fps=fps)
+    original_video.write_videofile(original_file_path, codec="libx264", fps=fps)
+    concated_video = mpe.ImageSequenceClip(concated_frames, fps=fps)
+    concated_video.write_videofile(result_file_path, codec="libx264", fps=fps)
+
+    combined_video = combine_frames(concated_frames, original_frames, fps)
+    combined_video.write_videofile(combined_file_name, codec="libx264", fps=fps)
+    return result_file_path, combined_file_name
+
+
+def combine_frames(frames_list1, frames_list2, fps):
     """
-    Assigns a unique color to each label, using a random seed for consistency.
-
     args:
-        label: int  # The label to get a color for.
-        seed: int  # Random seed for consistent color generation.
-
+        frames_list1: list of PIL images
+        frames_list2: list of PIL images
     returns:
-        color: tuple  # The color in BGR format.
+        final_clip: moviepy video clip
     """
+    clip1 = ImageSequenceClip(frames_list1, fps=fps)
+    clip2 = ImageSequenceClip(frames_list2, fps=fps)
 
-    # Ensure the same seed is used for the same label across multiple calls
-    random.seed(label + seed)
+    final_clip = mpe.clips_array([[clip1, clip2]])
 
-    # Generate a random BGR color tuple
-    color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-    return color
+    return final_clip
