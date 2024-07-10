@@ -1,0 +1,12 @@
+datasets
+easydict
+gradio
+moviepy
+numpy
+opencv-python
+scipy
+supervision
+timm
+torch
+torchvision
+git+https://github.com/qubvel/transformers.git@fix-rt-detr-init

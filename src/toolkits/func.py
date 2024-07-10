@@ -132,7 +132,6 @@ def annotate_image(
     frame,
     detections,
     labels,
-    scores,
     mask_annotator: sv.MaskAnnotator,
     bbox_annotator: sv.BoxAnnotator,
     label_annotator: sv.LabelAnnotator,
@@ -172,16 +171,17 @@ def detect_and_track(
         results = detect(Image.fromarray(frame), model, processor, confidence_threshold)
         tracked_results = track(results, tracker)
         frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
+        original_frames.append(frame.copy())
+        scores = tracked_results.confidence.tolist()
+        labels = tracked_results.class_id.tolist()
 
-        original_frames.append(frame)
         frame = annotate_image(
             frame,
             tracked_results,
             labels=[
-                model.config.id2label[label]
-                for label in tracked_results.class_id.tolist()
+                str(f"{model.config.id2label[label]}-{score:.2f}")
+                for label, score in zip(labels, scores)
             ],
-            scores=tracked_results.confidence.tolist(),
             mask_annotator=mask_annotator,
             bbox_annotator=bbox_annotator,
             label_annotator=label_annotator,
@@ -194,7 +194,7 @@ def detect_and_track(
     concated_video = mpe.ImageSequenceClip(concated_frames, fps=fps)
     concated_video.write_videofile(result_file_path, codec="libx264", fps=fps)
 
-    combined_video = combine_frames(concated_frames, original_frames, fps)
+    combined_video = combine_frames(original_frames, concated_frames, fps)
     combined_video.write_videofile(combined_file_name, codec="libx264", fps=fps)
     return result_file_path, combined_file_name
 

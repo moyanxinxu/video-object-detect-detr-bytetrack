@@ -1,7 +1,6 @@
 import gradio as gr
 import supervision as sv
-from func import combine_frames, detect_and_track
-from hyper import hp
+from func import detect_and_track
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
 processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
@@ -29,7 +28,11 @@ def process_video(video_path, confidence_threshold):
 with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column():
-            in_video = gr.Video(label="待检测视频")
+            in_video = gr.Video(
+                label="待检测视频",
+                show_download_button=True,
+                show_share_button=True,
+            )
             slide_cofidence = gr.Slider(
                 minimum=0.0, maximum=1.0, value=0.8, label="置信度阈值"
             )
@@ -51,7 +54,7 @@ with gr.Blocks() as demo:
             )
             combine_video = gr.Video(
                 interactive=False,
-                label="合成视频",
+                label="前后对比",
                 show_download_button=True,
                 show_share_button=True,
             )
