@@ -1,10 +1,15 @@
+import os
+
 import gradio as gr
 import supervision as sv
 from func import detect_and_track
+from hyper import hp
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
-processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
-model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
+os.environ["HF_ENDPOINT"] = "http://hf-mirror.com"
+
+processor = DetrImageProcessor.from_pretrained(hp.model_name)
+model = DetrForObjectDetection.from_pretrained(hp.model_name)
 tracker = sv.ByteTrack()
 
 mask_annotator = sv.MaskAnnotator()
@@ -34,7 +39,10 @@ with gr.Blocks() as demo:
                 show_share_button=True,
             )
             slide_cofidence = gr.Slider(
-                minimum=0.0, maximum=1.0, value=0.8, label="置信度阈值"
+                minimum=hp.slide_minimum,
+                maximum=hp.slide_maximum,
+                value=hp.slide_value,
+                label="置信度阈值",
             )
             examples = gr.Examples(
                 examples=[

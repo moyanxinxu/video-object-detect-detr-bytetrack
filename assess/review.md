@@ -77,7 +77,7 @@ paginate: "True"
 
 *  $pos_x$ $pos_y$ 分别表示二维空间中的横纵坐标
 *  $i$ 是编码向量维度索引，取值范围为 $0$ 到 $d_{\text{model}}/2 - 1$
-*  $d_{\text{model}}$ 是编码向量的维度 
+*  $d_{\text{model}}$ 是编码向量的维度
 
 ---
 

@@ -158,12 +158,12 @@ def detect_and_track(
 
     frames_loader = sv.get_video_frames_generator(video_path, end=len_frames)
 
-    result_file_name = "output.mp4"
-    original_file_name = "original.mp4"
-    combined_file_name = "combined.mp4"
-    result_file_path = os.path.join("../output/", result_file_name)
-    original_file_path = os.path.join("../output/", original_file_name)
-    combined_file_name = os.path.join("../output/", combined_file_name)
+    result_file_name = hp.result_file_name
+    original_file_name = hp.original_file_name
+    combined_file_name = hp.combined_file_name
+    result_file_path = os.path.join(hp.output_path, result_file_name)
+    original_file_path = os.path.join(hp.output_path, original_file_name)
+    combined_file_name = os.path.join(hp.output_path, combined_file_name)
 
     concated_frames = []
     original_frames = []
@@ -187,15 +187,15 @@ def detect_and_track(
             label_annotator=label_annotator,
         )
         concated_frames.append(frame)  # Add the processed frame to the list
-
+    codec = hp.codec
     # Create a MoviePy video clip from the list of frames
     original_video = mpe.ImageSequenceClip(original_frames, fps=fps)
-    original_video.write_videofile(original_file_path, codec="libx264", fps=fps)
+    original_video.write_videofile(original_file_path, codec=codec, fps=fps)
     concated_video = mpe.ImageSequenceClip(concated_frames, fps=fps)
-    concated_video.write_videofile(result_file_path, codec="libx264", fps=fps)
+    concated_video.write_videofile(result_file_path, codec=codec, fps=fps)
 
     combined_video = combine_frames(original_frames, concated_frames, fps)
-    combined_video.write_videofile(combined_file_name, codec="libx264", fps=fps)
+    combined_video.write_videofile(combined_file_name, codec=codec, fps=fps)
     return result_file_path, combined_file_name
 
 

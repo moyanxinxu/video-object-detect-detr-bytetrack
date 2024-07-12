@@ -18,7 +18,9 @@ supervision
 timm
 torch
 torchvision
-git+https://github.com/qubvel/transformers.git@fix-rt-detr-init
+transformers[torch]
+accelerate
+albumentations
 ```
 
 ## 技术路线
