@@ -1,4 +1,4 @@
-# video-object-detect-detr-deepsort
+# video-object-detect-detr-bytetrack
 
 ![banner.png](assess/banner.png)
 
